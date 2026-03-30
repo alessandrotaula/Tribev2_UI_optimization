@@ -1,0 +1,11 @@
+anthropic>=0.25.0
+numpy>=1.26.0
+matplotlib>=3.8.0
+scipy>=1.12.0
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+# Optional: per atlas ROI precisi
+# nilearn>=0.10.0
+# TRIBE v2: installato via pip install -e ./tribev2
+# git clone https://github.com/facebookresearch/tribev2
+# cd tribev2 && pip install -e .
