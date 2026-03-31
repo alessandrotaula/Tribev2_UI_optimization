@@ -4,7 +4,7 @@ Pipeline CLI che analizza titoli hero section usando TRIBE v2 (Meta FAIR) per pr
 
 ## Come funziona
 
-1. **Genera** 60 varianti del titolo (3 categorie × 20) via Claude
+1. **Genera** 60 varianti del titolo (3 categorie × 20) via GPT (OpenAI)
 2. **Analizza** ogni variante con TRIBE v2 per ottenere attivazioni fMRI predette
 3. **Aggrega** i vertici corticali in ROI scores (language, attention, emotion, etc.)
 4. **Calcola** un Composite Attention Score (CAS) pesato e ranking
@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 # 3. Configura API key
 cp .env.example .env
-# Modifica .env con la tua ANTHROPIC_API_KEY
+# Modifica .env con la tua OPENAI_API_KEY
 ```
 
 ## Uso
@@ -32,15 +32,14 @@ cp .env.example .env
 # Analisi completa con TRIBE v2
 python main.py --title "Trasforma il tuo business con l'AI"
 
-# Modalità mock (senza TRIBE v2, attivazioni simulate)
-python main.py --title "Trasforma il tuo business con l'AI" --mock
-
 # Salta generazione varianti (usa output/variants.json esistente)
 python main.py --title "..." --skip-generate
 
 # Salta anche l'analisi TRIBE v2 (usa attivazioni cached)
 python main.py --title "..." --skip-generate --skip-analyze
 ```
+
+> Nota: TRIBE v2 è obbligatorio. Se non è installato, l'app termina con errore.
 
 ## Output
 

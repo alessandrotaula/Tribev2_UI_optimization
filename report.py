@@ -20,8 +20,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 
-import anthropic
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
@@ -292,14 +292,14 @@ def _generate_llm_interpretation(
     api_key: Optional[str] = None,
 ) -> str:
     """Genera interpretazione e raccomandazioni via LLM."""
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    key = api_key or os.environ.get("OPENAI_API_KEY")
     if not key:
         return (
-            "*Interpretazione LLM non disponibile: ANTHROPIC_API_KEY non configurata.*\n\n"
+            "*Interpretazione LLM non disponibile: OPENAI_API_KEY non configurata.*\n\n"
             "Per generare l'interpretazione, configura la chiave API nel file .env."
         )
 
-    client = anthropic.Anthropic(api_key=key)
+    client = OpenAI(api_key=key)
 
     system_prompt = (
         "You are a neuroscience-informed UX copywriter. "
@@ -330,13 +330,15 @@ def _generate_llm_interpretation(
     )
 
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+        response = client.chat.completions.create(
+            model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
             max_tokens=3000,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
         )
-        return response.content[0].text
+        return response.choices[0].message.content or ""
     except Exception as e:
         return f"*Errore nella generazione dell'interpretazione LLM: {e}*"
 
@@ -387,8 +389,6 @@ def generate_report(
     lines.append(f'- **Titolo originale**: "{input_title}"')
     lines.append(f"- **Data analisi**: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append(f"- **Totale varianti analizzate**: 61 (1 originale + 60 varianti)")
-    if rankings.get("mock", scores.get("mock")):
-        lines.append("- **⚠ Modalità**: Mock (attivazioni simulate, TRIBE v2 non disponibile)")
     lines.append("")
 
     # Executive Summary

@@ -1,5 +1,5 @@
 """
-generate.py — Generazione varianti hero title via Anthropic LLM.
+generate.py — Generazione varianti hero title via OpenAI GPT.
 
 Genera 60 varianti (3 categorie × 20) a partire da un titolo hero originale.
 """
@@ -9,12 +9,12 @@ import os
 import time
 from typing import Optional
 
-import anthropic
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
 MAX_RETRIES = 3
 
 SYSTEM_PROMPT = (
@@ -59,28 +59,30 @@ CATEGORY_PROMPTS = {
 }
 
 
-def _call_llm(client: anthropic.Anthropic, category: str, title: str) -> list[str]:
-    """Chiama l'API Anthropic per generare 20 varianti di una categoria."""
+def _call_llm(client: OpenAI, category: str, title: str) -> list[str]:
+    """Chiama l'API OpenAI per generare 20 varianti di una categoria."""
     user_prompt = CATEGORY_PROMPTS[category].format(title=title)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = client.messages.create(
+            response = client.chat.completions.create(
                 model=MODEL,
-                max_tokens=2048,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{user_prompt}\n\n"
+                            "Return strictly this JSON object shape: "
+                            '{"titles": ["...", "..."]}'
+                        ),
+                    },
+                ],
             )
-            raw_text = response.content[0].text.strip()
-
-            # Pulizia: rimuovi eventuale markdown fencing
-            if raw_text.startswith("```"):
-                raw_text = raw_text.split("\n", 1)[1]
-                if raw_text.endswith("```"):
-                    raw_text = raw_text[: raw_text.rfind("```")]
-                raw_text = raw_text.strip()
-
-            titles = json.loads(raw_text)
+            raw_text = response.choices[0].message.content.strip()
+            parsed = json.loads(raw_text)
+            titles = parsed.get("titles")
 
             if not isinstance(titles, list) or len(titles) != 20:
                 raise ValueError(
@@ -93,7 +95,7 @@ def _call_llm(client: anthropic.Anthropic, category: str, title: str) -> list[st
 
             return titles
 
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
+        except (json.JSONDecodeError, ValueError, KeyError, IndexError, AttributeError) as e:
             print(f"  ⚠ {category} attempt {attempt}/{MAX_RETRIES} failed: {e}")
             if attempt < MAX_RETRIES:
                 time.sleep(1)
@@ -114,12 +116,12 @@ def generate_variants(
     Returns:
         dict con chiavi: input_title, similar, alternative, exaggerated
     """
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    key = api_key or os.environ.get("OPENAI_API_KEY")
     if not key:
         raise EnvironmentError(
-            "ANTHROPIC_API_KEY non trovata. Impostala nel file .env o passala come argomento."
+            "OPENAI_API_KEY non trovata. Impostala nel file .env o passala come argomento."
         )
-    client = anthropic.Anthropic(api_key=key)
+    client = OpenAI(api_key=key)
 
     result = {"input_title": title}
 

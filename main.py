@@ -11,7 +11,6 @@ Pipeline:
 
 Usage:
     python main.py --title "Il tuo titolo hero"
-    python main.py --title "Your hero title" --mock
     python main.py --title "..." --skip-generate --skip-analyze
 """
 
@@ -33,17 +32,12 @@ def main():
         epilog=(
             "Examples:\n"
             '  python main.py --title "Trasforma il tuo business con l\'AI"\n'
-            '  python main.py --title "Your hero title" --mock\n'
             '  python main.py --title "..." --skip-generate  # usa variants.json esistente\n'
         ),
     )
     parser.add_argument(
         "--title", required=True,
         help="Input hero title da analizzare"
-    )
-    parser.add_argument(
-        "--mock", action="store_true",
-        help="Usa attivazioni simulate (non richiede TRIBE v2 installato)"
     )
     parser.add_argument(
         "--skip-generate", action="store_true",
@@ -70,8 +64,6 @@ def main():
     print("🧠 Hero Title Brain Analyzer")
     print("=" * 60)
     print(f'📝 Input: "{args.title}"')
-    if args.mock:
-        print("⚠  Modalità MOCK: attivazioni simulate")
     print()
 
     # ─── Step 1: Generazione varianti ────────────────────────────
@@ -122,7 +114,6 @@ def main():
 
         activations = analyze_all(
             variants_path,
-            mock=args.mock,
             cache_folder=args.cache_dir,
         )
         save_activations(activations, activations_path)
@@ -150,8 +141,6 @@ def main():
     from compare import compute_rankings
 
     rankings = compute_rankings(scores)
-    # Propaga flag mock nei rankings
-    rankings["mock"] = activations.get("mock", args.mock)
 
     rankings_path = os.path.join(output_dir, "rankings.json")
     with open(rankings_path, "w", encoding="utf-8") as f:
