@@ -32,15 +32,14 @@ cp .env.example .env
 # Analisi completa con TRIBE v2
 python main.py --title "Trasforma il tuo business con l'AI"
 
-# Modalità mock (senza TRIBE v2, attivazioni simulate)
-python main.py --title "Trasforma il tuo business con l'AI" --mock
-
 # Salta generazione varianti (usa output/variants.json esistente)
 python main.py --title "..." --skip-generate
 
 # Salta anche l'analisi TRIBE v2 (usa attivazioni cached)
 python main.py --title "..." --skip-generate --skip-analyze
 ```
+
+> Nota: TRIBE v2 è obbligatorio. Se non è installato, l'app termina con errore.
 
 ## Output
 

@@ -15,12 +15,10 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
-
 import numpy as np
 from tqdm import tqdm
 
-# Flag per gestire l'assenza di TRIBE v2 (fallback a mock)
+# Flag disponibilità TRIBE v2
 TRIBE_AVAILABLE = False
 TribeModel = None
 
@@ -39,8 +37,7 @@ def _load_model(cache_folder: str = "./cache") -> object:
         raise ImportError(
             "tribev2 non è installato. Installa con:\n"
             "  git clone https://github.com/facebookresearch/tribev2\n"
-            "  cd tribev2 && pip install -e .\n"
-            "Oppure usa --mock per generare dati simulati."
+            "  cd tribev2 && pip install -e ."
         )
     print("  → Loading TRIBE v2 model (questo può richiedere qualche minuto)...")
     model = TribeModel.from_pretrained("facebook/tribev2", cache_folder=cache_folder)
@@ -83,80 +80,8 @@ def _predict_single_text(model, text: str) -> np.ndarray:
         os.unlink(text_path)
 
 
-def _generate_mock_activation(text: str, n_vertices: int = 20484) -> np.ndarray:
-    """
-    Genera attivazioni mock deterministiche basate sul testo.
-
-    Usa un hash del testo come seed per generare pattern realistici:
-    - Baseline gaussiana per tutti i vertici
-    - Boost nelle aree linguistiche per testi più lunghi
-    - Boost nelle aree emotive per testi con parole forti
-    - Varianza proporzionale alla complessità del testo
-
-    n_vertices=20484 corrisponde a fsaverage5 (10242 per emisfero).
-    """
-    seed = hash(text) % (2**32)
-    rng = np.random.RandomState(seed)
-
-    # Baseline: attivazione gaussiana
-    activation = rng.randn(n_vertices).astype(np.float32) * 0.3
-
-    # Fattori basati sul testo
-    word_count = len(text.split())
-    char_count = len(text)
-    has_question = "?" in text
-    has_exclamation = "!" in text
-
-    # Parole "emotive" comuni nel copywriting
-    emotional_words = {
-        "free", "now", "urgent", "limited", "exclusive", "guaranteed",
-        "proven", "secret", "discover", "amazing", "incredible", "transform",
-        "revolutionary", "ultimate", "powerful", "instant", "massive",
-        "libera", "gratis", "ora", "urgente", "limitato", "esclusivo",
-        "garantito", "provato", "segreto", "scopri", "incredibile",
-        "trasforma", "rivoluzionario", "ultimo", "potente", "istantaneo",
-    }
-    text_lower = text.lower()
-    emotion_score = sum(1 for w in emotional_words if w in text_lower)
-
-    # Simula regioni cerebrali su fsaverage5
-    # (approssimazione: dividiamo i vertici in blocchi funzionali)
-    n_hemi = n_vertices // 2
-
-    # Aree linguistiche (STG, MTG, IFG) — ~vertici 2000-5000 per emisfero sinistro
-    lang_start, lang_end = 2000, 5000
-    activation[lang_start:lang_end] += 0.2 + 0.02 * word_count
-
-    # Aree attentive dorsali (IPS, FEF) — ~vertici 5000-6500
-    att_d_start, att_d_end = 5000, 6500
-    activation[att_d_start:att_d_end] += 0.15 + (0.1 if has_question else 0)
-
-    # Aree attentive ventrali (TPJ) — ~vertici 6500-7500
-    att_v_start, att_v_end = 6500, 7500
-    activation[att_v_start:att_v_end] += 0.1 + (0.15 if has_exclamation else 0)
-
-    # Prefrontale (dlPFC, vmPFC) — ~vertici 0-2000
-    pfc_start, pfc_end = 0, 2000
-    activation[pfc_start:pfc_end] += 0.05 + 0.015 * word_count
-
-    # Emotive (amygdala proxy, insula) — ~vertici 7500-8500
-    emo_start, emo_end = 7500, 8500
-    activation[emo_start:emo_end] += 0.1 + 0.08 * emotion_score
-
-    # Default mode network (mPFC, PCC, angular) — ~vertici 8500-10000
-    dmn_start, dmn_end = 8500, 10000
-    activation[dmn_start:dmn_end] += 0.05 + (0.1 if char_count > 50 else 0)
-
-    # Anche l'emisfero destro (spostato di n_hemi)
-    activation[n_hemi + lang_start : n_hemi + lang_end] += 0.1 + 0.01 * word_count
-    activation[n_hemi + emo_start : n_hemi + emo_end] += 0.08 + 0.06 * emotion_score
-
-    return activation
-
-
 def analyze_all(
     variants_path: str,
-    mock: bool = False,
     cache_folder: str = "./cache",
 ) -> dict:
     """
@@ -164,7 +89,6 @@ def analyze_all(
 
     Args:
         variants_path: percorso al file variants.json
-        mock: se True, usa attivazioni simulate invece del modello reale
         cache_folder: percorso cache per il modello TRIBE v2
 
     Returns:
@@ -191,22 +115,10 @@ def analyze_all(
 
     print(f"  → Analyzing {len(all_titles)} titles...")
 
-    # Carica modello o usa mock
-    model = None
-    if not mock:
-        try:
-            model = _load_model(cache_folder)
-        except ImportError as e:
-            print(f"  ⚠ {e}")
-            print("  → Falling back to mock activations")
-            mock = True
+    model = _load_model(cache_folder)
+    predict_fn = lambda text: _predict_single_text(model, text)
 
-    # Predici attivazioni
-    predict_fn = (
-        _generate_mock_activation if mock else lambda text: _predict_single_text(model, text)
-    )
-
-    results = {"n_vertices": 20484, "mock": mock}
+    results = {"n_vertices": 20484}
 
     # Originale
     print(f"  → Analyzing original title...")
@@ -236,7 +148,6 @@ def save_activations(activations: dict, output_path: str) -> None:
     # JSON (senza i vettori completi per dimensione)
     summary = {
         "n_vertices": activations["n_vertices"],
-        "mock": activations.get("mock", False),
         "original": {
             "title": activations["original"]["title"],
             "activation_shape": len(activations["original"]["activation"]),
@@ -280,9 +191,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--variants", default="output/variants.json")
-    parser.add_argument("--mock", action="store_true", help="Use mock activations")
     parser.add_argument("--output", default="output/activations")
     args = parser.parse_args()
 
-    activations = analyze_all(args.variants, mock=args.mock)
+    activations = analyze_all(args.variants)
     save_activations(activations, args.output)

@@ -389,8 +389,6 @@ def generate_report(
     lines.append(f'- **Titolo originale**: "{input_title}"')
     lines.append(f"- **Data analisi**: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append(f"- **Totale varianti analizzate**: 61 (1 originale + 60 varianti)")
-    if rankings.get("mock", scores.get("mock")):
-        lines.append("- **⚠ Modalità**: Mock (attivazioni simulate, TRIBE v2 non disponibile)")
     lines.append("")
 
     # Executive Summary
