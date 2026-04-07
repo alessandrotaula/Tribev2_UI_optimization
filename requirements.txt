@@ -9,3 +9,4 @@ tqdm>=4.66.0
 # TRIBE v2: installato via pip install -e ./tribev2
 # git clone https://github.com/facebookresearch/tribev2
 # cd tribev2 && pip install -e .
+flask>=3.0.0
