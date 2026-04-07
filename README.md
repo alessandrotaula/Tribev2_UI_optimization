@@ -41,6 +41,17 @@ python main.py --title "..." --skip-generate --skip-analyze
 
 > Nota: TRIBE v2 è obbligatorio. Se non è installato, l'app termina con errore.
 
+
+## Deploy su Vercel
+
+Questo repository è una **CLI Python**. Per evitare l'errore di build su Vercel (entrypoint non trovato), è incluso un endpoint serverless minimo in `api/index.py` con configurazione `vercel.json`.
+
+- Endpoint root: `/`
+- Health check: `/health`
+- Endpoint informativo: `/run?title=...` (non esegue la pipeline completa su Vercel)
+
+> La pipeline TRIBE v2 resta pensata per esecuzione locale (o job compute dedicati), non per runtime serverless Vercel.
+
 ## Output
 
 ```
