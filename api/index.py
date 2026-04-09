@@ -122,66 +122,80 @@ def _cas(roi_scores: dict) -> float:
 # OpenAI variant generation (inline, no file I/O)
 # ──────────────────────────────────────────────
 MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
-MAX_RETRIES = 3
+MAX_RETRIES = 2
 
-SYSTEM_PROMPT = (
-    "You are a conversion copywriter expert. "
-    "Respond ONLY with a valid JSON object. "
-    "No markdown, no explanations, no extra text."
-)
+_SINGLE_PROMPT = """\
+You are a conversion copywriter. Given a hero section title, generate variants in 3 categories.
 
-CATEGORY_PROMPTS = {
-    "similar": (
-        'Original hero title: "{title}"\n\n'
-        "Generate exactly 20 hero section titles SIMILAR to the original.\n"
-        "- Same tone and message, small A/B-test variations\n"
-        '{"titles": ["...", ...]}'
-    ),
-    "alternative": (
-        'Original hero title: "{title}"\n\n'
-        "Generate exactly 20 hero section titles as ALTERNATIVES.\n"
-        "- Different angle: benefit-led, problem-led, question, curiosity gap\n"
-        '{"titles": ["...", ...]}'
-    ),
-    "exaggerated": (
-        'Original hero title: "{title}"\n\n'
-        "Generate exactly 20 EXAGGERATED hero section titles.\n"
-        "- Hyperbolic, bold, direct-response style, big promises\n"
-        '{"titles": ["...", ...]}'
-    ),
-}
+Original title: "{title}"
+
+Return ONLY a JSON object with exactly this structure:
+{{
+  "similar": ["title1", "title2", ..., "title10"],
+  "alternative": ["title1", "title2", ..., "title10"],
+  "exaggerated": ["title1", "title2", ..., "title10"]
+}}
+
+Rules:
+- similar: same tone/message, small A/B-test variations
+- alternative: different angles (benefit-led, problem-led, question, curiosity gap)
+- exaggerated: hyperbolic, bold, direct-response style
+- exactly 10 strings per category
+- no markdown, no extra keys, no explanations
+"""
+
+
+def _extract_list(parsed: dict, key: str) -> list:
+    """Robustly extract a list from parsed JSON, trying multiple key variants."""
+    # Direct key
+    v = parsed.get(key)
+    if isinstance(v, list) and v:
+        return v
+    # Search all values for the first non-empty list if key missing
+    for val in parsed.values():
+        if isinstance(val, list) and val and key in str(parsed)[:200]:
+            return val
+    # Last resort: any list
+    for val in parsed.values():
+        if isinstance(val, list) and len(val) >= 5:
+            return val
+    return []
 
 
 def _generate_variants(title: str, api_key: str) -> dict:
-    from openai import OpenAI  # lazy import — not available if not installed
+    from openai import OpenAI
     client = OpenAI(api_key=api_key)
-    result = {"input_title": title, "similar": [], "alternative": [], "exaggerated": []}
-    for cat in ["similar", "alternative", "exaggerated"]:
-        prompt = CATEGORY_PROMPTS[cat].format(title=title)
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                resp = client.chat.completions.create(
-                    model=MODEL,
-                    response_format={"type": "json_object"},
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                )
-                parsed = json.loads(resp.choices[0].message.content)
-                titles = parsed.get("titles", [])
-                if not isinstance(titles, list) or len(titles) == 0:
-                    raise ValueError("Empty titles list")
-                # Pad/trim to exactly 20
-                while len(titles) < 20:
-                    titles.append(titles[-1] + " (variant)")
-                result[cat] = titles[:20]
-                break
-            except Exception as e:
-                if attempt == MAX_RETRIES:
-                    raise RuntimeError(f"Failed to generate {cat} variants: {e}") from e
-                time.sleep(1)
-    return result
+
+    prompt = _SINGLE_PROMPT.format(title=title)
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = client.chat.completions.create(
+                model=MODEL,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+                timeout=50,
+            )
+            raw = resp.choices[0].message.content
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                raise ValueError(f"Expected dict, got {type(parsed).__name__}")
+
+            result = {"input_title": title}
+            for cat in ["similar", "alternative", "exaggerated"]:
+                lst = _extract_list(parsed, cat)
+                if not lst:
+                    raise ValueError(f"Missing '{cat}' list in response")
+                # Pad/trim to exactly 10
+                while len(lst) < 10:
+                    lst.append(lst[-1] + " (alt)")
+                result[cat] = [str(t) for t in lst[:10]]
+            return result
+
+        except Exception as e:
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(f"OpenAI generation failed: {e}") from e
+            time.sleep(1)
 
 
 # ──────────────────────────────────────────────
@@ -229,7 +243,7 @@ def _run_analysis(title: str, api_key: str) -> dict:
             "max_cas": round(max(vals), 4),
             "min_cas": round(min(vals), 4),
             "std": round(statistics.stdev(vals), 4) if len(vals) > 1 else 0.0,
-            "median_cas": round(statistics.median(vals), 4),
+            "median_cas": round(statistics.median(vals), 4) if vals else 0.0,
         }
 
     all_cas = [e["cas"] for e in variant_entries]
