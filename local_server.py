@@ -526,6 +526,104 @@ def job_status(job_id):
 
 
 # ──────────────────────────────────────────────
+# Startup helpers
+# ──────────────────────────────────────────────
+def _ensure_git() -> bool:
+    """Return True if git is available, otherwise try to install it."""
+    import shutil
+    import subprocess
+
+    if shutil.which("git"):
+        return True
+
+    print("   git: ✗ not found — attempting to install…")
+    platform = sys.platform
+
+    try:
+        if platform == "darwin":
+            # macOS — use Homebrew if available, otherwise xcode-select
+            if shutil.which("brew"):
+                subprocess.run(["brew", "install", "git"], check=True)
+            else:
+                print("   → Running: xcode-select --install  (follow the popup)")
+                subprocess.run(["xcode-select", "--install"], check=False)
+                print("   → After the Xcode tools install completes, re-run this script.")
+                sys.exit(1)
+
+        elif platform.startswith("linux"):
+            # Try apt (Debian/Ubuntu), then yum (RHEL/CentOS), then apk (Alpine)
+            if shutil.which("apt-get"):
+                subprocess.run(["sudo", "apt-get", "install", "-y", "git"], check=True)
+            elif shutil.which("yum"):
+                subprocess.run(["sudo", "yum", "install", "-y", "git"], check=True)
+            elif shutil.which("apk"):
+                subprocess.run(["apk", "add", "--no-cache", "git"], check=True)
+            else:
+                print("   ✗ Cannot detect package manager. Install git manually: https://git-scm.com/downloads")
+                return False
+
+        elif platform == "win32":
+            # Windows — try winget, then choco, then direct download
+            if shutil.which("winget"):
+                subprocess.run(["winget", "install", "--id", "Git.Git", "-e", "--silent"], check=True)
+            elif shutil.which("choco"):
+                subprocess.run(["choco", "install", "git", "-y"], check=True)
+            else:
+                print("   → Download and install git from: https://git-scm.com/download/win")
+                print("   → Then re-run this script.")
+                sys.exit(1)
+
+        else:
+            print(f"   ✗ Unknown platform '{platform}'. Install git manually: https://git-scm.com/downloads")
+            return False
+
+        if shutil.which("git"):
+            print("   git: ✓ installed successfully")
+            return True
+        else:
+            print("   ✗ git install completed but binary not found — open a new terminal and retry.")
+            return False
+
+    except subprocess.CalledProcessError as e:
+        print(f"   ✗ git install failed: {e}")
+        return False
+
+
+def _ensure_tribev2() -> bool:
+    """Return True if tribev2 is importable, otherwise clone + pip install it."""
+    import shutil
+    import subprocess
+
+    try:
+        import tribev2  # noqa
+        return True
+    except ImportError:
+        pass
+
+    print("   TRIBE v2: ✗ not found — installing…")
+    if not _ensure_git():
+        print("   ✗ git required to install TRIBE v2.")
+        return False
+
+    repo_dir = Path("tribev2")
+    try:
+        if not repo_dir.exists():
+            print("   → Cloning facebookresearch/tribev2…")
+            subprocess.run(
+                ["git", "clone", "https://github.com/facebookresearch/tribev2", str(repo_dir)],
+                check=True,
+            )
+        print("   → Running: pip install -e tribev2")
+        subprocess.run([sys.executable, "-m", "pip", "install", "-e", str(repo_dir)], check=True)
+        import tribev2  # noqa
+        print("   TRIBE v2: ✓ installed")
+        return True
+    except Exception as e:
+        print(f"   ✗ TRIBE v2 install failed: {e}")
+        return False
+
+
+# ──────────────────────────────────────────────
 # Entry point
 # ──────────────────────────────────────────────
 if __name__ == "__main__":
@@ -537,19 +635,23 @@ if __name__ == "__main__":
     print(f"   Mode: Full TRIBE v2 pipeline")
     print()
 
-    # Warn if OPENAI_API_KEY missing
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("⚠  WARNING: OPENAI_API_KEY not set. Add it to .env or export it.")
-        print()
-
-    # Warn if TRIBE v2 not importable
-    try:
-        import tribev2  # noqa
-        print("   TRIBE v2: ✓ installed")
-    except ImportError:
-        print("   TRIBE v2: ✗ not found")
-        print("   Install:  git clone https://github.com/facebookresearch/tribev2")
-        print("             pip install -e tribev2")
+    # ── Check git ──────────────────────────────
+    if _ensure_git():
+        print("   git: ✓")
+    else:
+        print("   ⚠  git not available — TRIBE v2 auto-install will not work.")
     print()
 
+    # ── Check / auto-install TRIBE v2 ──────────
+    _ensure_tribev2()
+    print()
+
+    # ── Check OPENAI_API_KEY ───────────────────
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("⚠  WARNING: OPENAI_API_KEY not set.")
+        print("   Add it to a .env file:  OPENAI_API_KEY=sk-...")
+        print()
+
+    print(f"Starting server at http://localhost:{port} …")
+    print()
     app.run(host="0.0.0.0", port=port, debug=False)
