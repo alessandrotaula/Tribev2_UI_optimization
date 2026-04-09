@@ -317,10 +317,12 @@ function startAnalysis() {
   .catch(err => { showLoading(false); showError('Network error: ' + err.message); });
 }
 
+let _pollErrors = 0;
 function pollJob(jobId) {
   fetch(`/job/${jobId}`)
   .then(r => r.json())
   .then(job => {
+    _pollErrors = 0;
     setProgress(job.progress || 0, job.step || '…');
     if (job.status === 'running') {
       pollTimer = setTimeout(() => pollJob(jobId), 2500);
@@ -332,7 +334,16 @@ function pollJob(jobId) {
       showError(job.error || 'Analysis failed.');
     }
   })
-  .catch(err => { showLoading(false); showError('Polling error: ' + err.message); });
+  .catch(err => {
+    _pollErrors++;
+    if (_pollErrors <= 5) {
+      // Transient network error — retry (common during heavy model downloads)
+      pollTimer = setTimeout(() => pollJob(jobId), 3000 * _pollErrors);
+    } else {
+      showLoading(false);
+      showError('Connection lost after ' + _pollErrors + ' retries: ' + err.message);
+    }
+  });
 }
 
 function setProgress(pct, msg) {
